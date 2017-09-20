@@ -1,0 +1,26 @@
+name: rl-study-group
+channels:
+        - conda-forge
+dependencies:
+        - python>=3.5
+        - numpy
+        - mkl
+        - jupyter
+        - pandas
+        - six
+        - h5py
+        - matplotlib
+        - seaborn
+        - Pillow
+        - PyOpenGL
+        - glances
+        - pytest-cov
+        - pytest-xdist
+        - pip:
+                - codacy-coverage
+                - mem_top
+                - atari_py
+                - cmake
+                - gpustat
+                - tqdm
+                - gym[all]
