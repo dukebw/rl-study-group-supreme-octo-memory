@@ -1,0 +1,273 @@
+\documentclass[a4paper, 12pt, titlepage]{article}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+
+\date{\today}
+\title{Chapter 3: Finite Markov Decision Processes}
+
+\author{Brendan Duke}
+
+\begin{document}
+
+\maketitle
+
+
+\section{Exercise 3.1}
+
+\begin{itemize}
+        \item Neural network building neural architecture.
+
+                State: current target or test neural network structure.
+
+                Action: add/delete module in the test NN structure.
+
+                Reward: increases as accuracy of test NN increases.
+
+        \item Starcraft AI\@.
+
+                State: positions of units, amount of resources, amount of
+                supply, number of bases, etc. For both self and opponent? How
+                about fog of war (unobserved state)?
+
+                Action: all possible actions for all current units and
+                buildings, e.g.\ move, hold, attack, build units, mine
+                minerals, etc.
+
+                Reward: $+1$ for winning, $-1$ for losing.
+
+        \item Graduate student.
+
+                State: current state of thesis, notes and experiments logs.
+                Does the state of knowledge and ideas in a student's brain
+                count?
+
+                Action: read papers, run experiment A vs.\ experiment B, write
+                notes, sit and think.
+
+                Reward: $-1$ for every additional semester that goes by without
+                completing the thesis.
+\end{itemize}
+
+
+\section{Exercise 3.2}
+
+I couldn't think of any. It could be some task for which we can't assign a
+single scalar value to represent the performance of the agent.
+
+
+\section{Exercise 3.3}
+
+The right ``line to draw'' between agent and environment depends on the agent's
+interface with the environment. If the agent has literally to control the
+steering of the car by moving the wheel, then it is not sufficient to simply
+say ``go west for five kilometers''.
+
+On the other hand, working at a higher level of abstraction reduces the size of
+the action space, so it would be better to implement an interface that allows
+the RL agent to act at as high of a level as possible.
+
+
+\section{Exercise 3.4}
+
+From the equation of the return $G_t$ in terms of the reward and return at
+timestep $t + 1$, the return at each time $G_t$ would be $-1$ discounted by
+$\gamma$ for however many timesteps $t_f$ are expected to occur before failure,
+i.e.\ $G_t = -\gamma^{t_f}$.
+
+The difference between episodic and continuing returns in this case would be
+that for episodic, the final time $t_f$ would be at best $T$ the terminal time,
+whereas in the continuing case we could have $G_t$ approach zero as $t_f$ grows
+to infinity.
+
+
+\section{Exercise 3.5}
+
+Since the expected reward is the same, $+1$, for however long it takes the
+robot to get out of the maze, once it figures out how to successfully leave the
+maze there is no futher incentive to improve. Therefore there should be an
+additional penalty, e.g. $-1$ per timestep.
+
+
+\section{Exercise 3.6}
+
+By working backwards from $G_t = R_{t + 1} + \gamma G_{t + 1}$, and starting at
+$G_5 = 0$ since $T = 5$:
+
+\begin{align*}
+        G_5 = 0\\
+        G_4 = 2\\
+        G_3 = 4\\
+        G_2 = 8\\
+        G_1 = 6\\
+        G_0 = 2
+\end{align*}
+
+
+\section{Exercise 3.7}
+
+The discounted return $G_1$ can be obtained using geometric series, and $G_0$
+can be obtained by adding the reward $R_1$ to the discounted $G_1$. This gives
+$G_1 = 70$ and $G_0 = 65$.
+
+
+\section{Exercise 3.8: Broken vision system}
+
+The vision system would most likely not have access to the \emph{perfect}
+Markov state, since certain objects are occluded. However, depending on the
+task, if all objects necessary to understand the states in the system were
+visible, then in this case the camera would have access to the Markov state.
+
+
+\section{Exercise 3.9}
+
+The expectation of $R_{t + 1}$ is,
+
+\begin{equation*}
+        \mathbb{E}\left(R_{t + 1} | S_t = s\right) =
+                \sum_{a, r, s'} \pi(s | a) \cdot r \cdot p(s', r | s, a).
+\end{equation*}
+
+
+\section{Exercise 3.10}
+
+This table seems to be the same as Table~3.1 in the book, except with the
+$p(s' | s, a)$ column relabeled to $p(s', r | s, a)$.
+
+
+\section{Exercise 3.11}
+
+The Bellman equation for action-values is,
+
+\begin{equation*}
+        q_{\pi}(s, a) = \sum_{s', r} p(s', r | s, a)
+                \left[r + \gamma \sum_{a'} \pi(a' | s') q_{\pi}(s', a')\right].
+\end{equation*}
+
+
+\section{Exercise 3.12}
+
+By summing the values of the four neighbouring states and multiplying by the
+probability $1/4$ of entering those states, a value of $0.75$ is obtained,
+which is accurate to one decimal place.
+
+
+\section{Exercise 3.13}
+
+By adding a constant $c$ to each reward, from geometric series we obtain the
+constant $c/(1 - \gamma)$ added to the expected return. Since the value
+function $v_{\pi}$ is an expectation of the return, and the expectation value
+of a constant is that constant, the constant $v_c = c/(1 - \gamma)$ is added to
+the value function.
+
+
+\section{Exercise 3.14}
+
+In an episodic task such as maze running, an issue arises if the reward per
+timestep changes sign, i.e.\ from negative to positive. Then the agent's
+incentive is changed from wanting to leave the maze as soon as possible, to
+staying in the maze to collect as much positive reward as possible.
+
+
+\section{Exercise 3.15}
+
+The value of a state $s$ in terms of the action value function $q_{\pi}$ is the
+expected action-value
+$v_{\pi}(s) = \mathbb{E}\left[q_{\pi}(s, A_t) | S_t = s\right]$.
+
+This is the action-value function for each action, weighted by the probability
+of performing that action based on the policy $\pi$, i.e.,
+$v_{\pi}(s) = \sum_a \pi(a | s) q_{\pi}(s, a)$.
+
+
+\section{Exercise 3.16}
+
+The first equation is,
+
+\begin{equation*}
+        q_{\pi}(s, a) =
+                \mathbb{E}\left[R_{t + 1} + \gamma v_{\pi}(S_{t + 1}) | S_t = s, A_t = a\right].
+\end{equation*}
+
+The second equation is,
+
+\begin{equation*}
+        q_{\pi}(s, a) =
+                \sum_{s', r} p(s', r | s, a)\left[r + \gamma v_{\pi}(s')\right].
+\end{equation*}
+
+
+\section{Exercise 3.17}
+
+The same as the optimal state-value function in Figure~3.6
+$q_*(s, \mathtt{driver})$, except on the green where the value function for the
+putter can be used.
+
+
+\section{Exercise 3.18}
+
+$q_*(s, \mathtt{putter})$ would be the same as the optimal state-value
+function, except add $-1$ to each expected return everywhere that isn't on the
+green or within the small circle around the green from which the green can be
+reached with a single putt.
+
+
+\section{Exercise 3.19}
+
+\begin{align*}
+        q_*(\mathtt{h}, \mathtt{s}) &= \alpha [r_\mathtt{s} + \gamma v_*(\mathtt{h})] +
+                                       (1 - \alpha)[r_\mathtt{s} + \gamma v_*(\mathtt{l})] \\
+        q_*(\mathtt{h}, \mathtt{w}) &= r_\mathtt{w} + \gamma v_*(\mathtt{h}) \\
+        q_*(\mathtt{l}, \mathtt{s}) &= \beta [r_\mathtt{s} + \gamma v_*(\mathtt{l})] +
+                                       (1 - \beta)[-3 + \gamma v_*(\mathtt{h})] \\
+        q_*(\mathtt{l}, \mathtt{w}) &= r_\mathtt{w} + \gamma v_*(\mathtt{l}) \\
+        q_*(\mathtt{l}, \mathtt{re}) &= \gamma v_*(\mathtt{h})
+\end{align*}
+
+
+\section{Exercise 3.20}
+
+The value can be expressed symbolically in terms of the reward from being in
+state A and doing anything, discounted repeatedly by the number of steps (five)
+that it takes to get back to state $A$ after jumping to $A'$. This gives an
+infinite sum in $0.9^5$, which can be solved using geometric series to give
+$G_0 \approx 24.419$.
+
+
+\section{Exercise 3.21}
+
+For $\gamma = 0$, the policy that chooses left is better since the $+2$ from
+choosing right is discounted to zero. For similar reasoning, the policy that
+always chooses right is better for $\gamma = 0.9$ and any policy is equally
+good when $\gamma = 0.5$.
+
+
+\section{Exercise 3.22}
+
+\begin{equation*}
+        v_*(s) = \max_a q_*(s, a).
+\end{equation*}
+
+
+\section{Exercise 3.23}
+
+\begin{equation*}
+        q_*(s, a) = \sum_{s', r} p(s', r | s, a) [r + \gamma v_*(s')].
+\end{equation*}
+
+
+\section{Exercise 3.24}
+
+\begin{equation*}
+        \pi_*(s) = \textrm{argmax}_a q_*(s, a)
+\end{equation*}
+
+
+\section{Exercise 3.25}
+
+\begin{equation*}
+        \pi_*(s) =
+                \textrm{argmax}_a \sum_{s', r} p(s', r | s, a) [r + \gamma v_*(s')]
+\end{equation*}
+
+\end{document}
