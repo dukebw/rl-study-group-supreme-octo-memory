@@ -38,15 +38,8 @@ get_state_value(uint32_t *best_policy, uint32_t capital, double *value)
                 uint32_t heads_state = capital + candidate_policy;
                 uint32_t tails_state = capital - candidate_policy;
 
-                double heads_reward;
-                if (heads_state == WIN_CAPITAL)
-                        heads_reward = 1.0;
-                else
-                        heads_reward = 0.0;
-
-                double policy_val =
-                        (PROB_H*(heads_reward + value[heads_state]) +
-                         (1.0 - PROB_H)*value[tails_state]);
+                double policy_val = (PROB_H*value[heads_state] +
+                                     (1.0 - PROB_H)*value[tails_state]);
 
                 if (policy_val > best_policy_val) {
                         best_policy_val = policy_val;
@@ -117,6 +110,10 @@ int main(int argc, const char **argv)
         policy_plot[0] = 0.0;
 
         plbin(NUM_STATES, capital_range, policy_plot, 0);
+
+        plenv(0, WIN_CAPITAL, 0, 1.0, 0, 0);
+
+        plline(NUM_STATES, capital_range, value);
 
         plend();
 
