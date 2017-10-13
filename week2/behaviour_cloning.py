@@ -16,7 +16,7 @@ def _get_batch(data, batch_indices, start_i, end_i):
 
 
 def _get_rollout(obs, actions, batch_i, batch_indices, batch_size):
-    """Get rollout {(x_i, \pi(x_i)}."""
+    r"""Get rollout {(x_i, \pi(x_i)}."""
     start_i = batch_i*batch_size
     end_i = (batch_i + 1)*batch_size
 
