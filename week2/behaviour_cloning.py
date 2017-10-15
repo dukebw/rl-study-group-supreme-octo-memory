@@ -4,6 +4,7 @@ import pickle
 import random
 
 import gym
+import load_policy
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
@@ -30,6 +31,8 @@ def _get_rollout(obs, actions, batch_i, batch_indices, batch_size):
 
 def _evaluate(plt_mean_returns, env, model):
     """Evaluate mean return of model and store in plt_mean_returns."""
+    visited_obs = []
+
     model.eval()
     returns = []
     obs = env.reset()
@@ -43,6 +46,7 @@ def _evaluate(plt_mean_returns, env, model):
             obs = torch.autograd.Variable(obs, volatile=True)
             action = model(obs.cuda())
             obs, r, done, _ = env.step(action.cpu().data.numpy())
+            visited_obs.append(obs)
             total_r += r
             steps += 1
             if steps >= env.spec.timestep_limit:
@@ -51,6 +55,8 @@ def _evaluate(plt_mean_returns, env, model):
         returns.append(total_r)
 
     plt_mean_returns.append(np.mean(returns))
+
+    return np.array(visited_obs, dtype=np.float32)
 
 
 def _train_single_epoch(plt_train_mean_losses,
@@ -109,20 +115,10 @@ def _get_model(expert_data):
         )
 
 
-def behaviour_cloning(bhvr_clone_gt_file, batch_size, num_epochs, envname):
-    """Imitation learning from saved (obs, actions) pairs from an expert
-    policy.
+def _init_boxs_loop(expert_data):
+    """Initializes Box's loop:
+    (model(data) -> inference -> criticism -> updated model(data))*.
     """
-    torch.backends.cudnn.benchmark = True
-
-    env = gym.make(envname)
-
-    with open(bhvr_clone_gt_file, 'rb') as f:
-        expert_data = pickle.load(f)
-
-    obs_train = expert_data['observations']
-    actions_train = expert_data['actions']
-
     model = _get_model(expert_data).cuda()
 
     criticism = torch.nn.MSELoss().cuda()
@@ -133,38 +129,60 @@ def behaviour_cloning(bhvr_clone_gt_file, batch_size, num_epochs, envname):
                                   {'params': weights, 'weight_decay': 1e-4}],
                                  lr=1e-3)
 
-    boxs_loop = {'data': {'obs': obs_train, 'action': actions_train},
-                 'model': model,
-                 'criticism': criticism,
-                 'optimizer': optimizer}
+    return {'data': {'obs': expert_data['observations'],
+                     'action': expert_data['actions']},
+            'model': model,
+            'criticism': criticism,
+            'optimizer': optimizer}
+
+
+def _subplot(nrows_ncols_plotnum, x, y, xlab, ylab):
+    """Create subplot using the nrows_ncols_plotnum shorthand."""
+    ax = plt.subplot(nrows_ncols_plotnum)
+    ax.set_xlabel(xlab)
+    ax.set_ylabel(ylab)
+
+    plt.plot(x, y)
+
+
+def behaviour_cloning(flags):
+    """Imitation learning from saved (obs, actions) pairs from an expert
+    policy.
+    """
+    torch.backends.cudnn.benchmark = True
+
+    env = gym.make(flags.envname)
+
+    with open(flags.bhvr_clone_gt_file, 'rb') as f:
+        expert_data = pickle.load(f)
+
+    policy_fn = load_policy.load_policy(flags.expert_policy_file)
+
+    boxs_loop = _init_boxs_loop(expert_data)
 
     plt_train_mean_losses = []
     plt_mean_returns = []
-    for _ in range(num_epochs):
-        batch_indices = list(range(obs_train.shape[0]))
+    for _ in range(flags.num_epochs):
+        batch_indices = list(range(boxs_loop['data']['obs'].shape[0]))
 
         _train_single_epoch(plt_train_mean_losses,
                             boxs_loop,
                             batch_indices,
-                            batch_size)
+                            flags.batch_size)
 
-        _evaluate(plt_mean_returns, env, model)
+        visited_obs = _evaluate(plt_mean_returns, env, boxs_loop['model'])
+        expert_actions = np.array(
+            [policy_fn(obs[None, :]) for obs in visited_obs], dtype=np.float32)
+        boxs_loop['data']['obs'] = np.concatenate(
+            [boxs_loop['data']['obs'], visited_obs], axis=0)
+        boxs_loop['data']['action'] = np.concatenate(
+            [boxs_loop['data']['action'], expert_actions], axis=0)
 
     epochs = list(range(len(plt_train_mean_losses)))
 
     plt.figure(1)
-    ax = plt.subplot(211)
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Training loss')
-
-    plt.plot(epochs, plt_train_mean_losses)
-
-    ax = plt.subplot(212)
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Return')
-
-    plt.plot(epochs, plt_mean_returns)
-
+    _subplot(211, epochs, plt_train_mean_losses, 'Epoch', 'Training loss')
+    _subplot(212, epochs, plt_mean_returns, 'Epoch', 'Return')
     plt.show()
 
 
@@ -172,13 +190,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--bhvr-clone-gt-file', type=str, default=None)
     parser.add_argument('--envname', type=str, default=None)
+    parser.add_argument('--expert-policy-file', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=None)
     parser.add_argument('--num-epochs', type=int, default=None)
     args = parser.parse_args()
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)):
-        behaviour_cloning(args.bhvr_clone_gt_file,
-                          args.batch_size,
-                          args.num_epochs,
-                          args.envname)
+        behaviour_cloning(args)
