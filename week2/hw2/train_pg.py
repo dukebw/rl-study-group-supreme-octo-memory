@@ -1,3 +1,4 @@
+import collections
 import numpy as np
 import tensorflow as tf
 import gym
@@ -54,41 +55,64 @@ class GRULinear(torch.nn.Module):
         return pred, hidden_curr
 
 
-def _get_model(obs_dim, action_dim, model_name):
+def _get_model(obs_dim, action_dim, model_name, num_layers, hidden_size):
     """MLP with four layers of 32 hidden units each."""
+    if model_name == 'feedforward':
+        layers = []
+        for i in range(num_layers):
+            prev_size = obs_dim if i == 0 else hidden_size
+            out_size = action_dim if i == (num_layers - 1) else hidden_size
+            layers.append(('linear{}'.format(i),
+                           torch.nn.Linear(in_features=prev_size,
+                                           out_features=out_size,
+                                           bias=True)))
+            if i < (num_layers - 1):
+                layers.append(('relu{}'.format(i),
+                               torch.nn.ReLU(inplace=True)))
+
+        layers = collections.OrderedDict(layers)
+
     models = {
-        'feedforward': torch.nn.Sequential(
-            torch.nn.Linear(
-                in_features=obs_dim,
-                out_features=32,
-                bias=True),
-            torch.nn.ReLU(),
-            torch.nn.Linear(
-                in_features=32,
-                out_features=action_dim,
-                bias=True)),
+        'feedforward': torch.nn.Sequential(layers),
         'gru': GRULinear(
             input_size=obs_dim,
             output_size=action_dim,
             hidden_size=32,
-            num_layers=3),
+            num_layers=num_layers),
     }
 
     return models[model_name]
 
 
-def _init_boxs_loop(obs_dim, action_dim, model_name, is_discrete):
+def _init_boxs_loop(obs_dim,
+                    action_dim,
+                    model_name,
+                    is_discrete,
+                    num_layers,
+                    hidden_size):
     """Initializes Box's loop:
     (model(data) -> inference -> criticism -> updated model(data))*.
     """
-    policy = _get_model(obs_dim, action_dim, model_name).cuda()
+    policy = _get_model(obs_dim,
+                        action_dim,
+                        model_name,
+                        num_layers,
+                        hidden_size).cuda()
 
-    optimizer = torch.optim.Adam(policy.parameters(), lr=5e-2)
+    biases = [p for name, p in policy.named_parameters() if 'bias' in name]
+    weights = [p
+               for name, p in policy.named_parameters() if 'bias' not in name]
 
     if is_discrete:
         policy_logstd = None
     else:
-        policy_logstd = torch.autograd.Variable(0, requires_grad=True)
+        policy_logstd = torch.autograd.Variable(torch.zeros(1).cuda(),
+                                                requires_grad=True)
+        biases.append(policy_logstd)
+
+    optimizer = torch.optim.Adam([{'params': biases, 'weight_decay': 0},
+                                  {'params': weights, 'weight_decay': 1e-4}],
+                                 lr=1e-2)
 
     return {'policy': policy,
             'policy_logstd': policy_logstd,
@@ -129,7 +153,7 @@ def train_PG(exp_name='',
              nn_baseline=False,
              seed=0,
              # network arguments
-             n_layers=1,
+             num_layers=1,
              size=32
              ):
 
@@ -224,7 +248,9 @@ def train_PG(exp_name='',
     boxs_loop = _init_boxs_loop(obs_dim,
                                 action_dim,
                                 'feedforward',
-                                is_discrete)
+                                is_discrete,
+                                num_layers,
+                                size)
 
     # ======================================================================= #
     #                           ----------SECTION 5----------
@@ -271,8 +297,7 @@ def train_PG(exp_name='',
                 obs.append(ob)
 
                 ob = torch.autograd.Variable(
-                    torch.from_numpy(ob.astype(np.float32)),
-                    requires_grad=True).cuda()
+                    torch.from_numpy(ob.astype(np.float32))).cuda()
                 policy_logits = boxs_loop['policy'](ob)
 
                 # NOTE(brendan): Here, an action is sampled from the policy.
@@ -291,9 +316,13 @@ def train_PG(exp_name='',
 
                     logprob = logprob[action.data]
                 else:
+                    if (steps == 0) and (len(paths) == 0):
+                        print('logstd {}'.format(
+                                boxs_loop['policy_logstd'].data.cpu().numpy()))
                     action = torch.normal(
                         means=policy_logits,
                         std=torch.exp(boxs_loop['policy_logstd']))
+                    action = torch.autograd.Variable(action.data)
                     logprob = _normal_log_prob(action,
                                                policy_logits,
                                                boxs_loop['policy_logstd'])
@@ -509,7 +538,7 @@ def main():
     parser.add_argument('--nn_baseline', '-bl', action='store_true')
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--n_experiments', '-e', type=int, default=1)
-    parser.add_argument('--n_layers', '-l', type=int, default=1)
+    parser.add_argument('--num_layers', '-l', type=int, default=1)
     parser.add_argument('--size', '-s', type=int, default=32)
     args = parser.parse_args()
 
@@ -540,7 +569,7 @@ def main():
                 normalize_advantages=not(args.dont_normalize_advantages),
                 nn_baseline=args.nn_baseline,
                 seed=seed,
-                n_layers=args.n_layers,
+                num_layers=args.num_layers,
                 size=args.size
                 )
         # Awkward hacky process runs, because Tensorflow does not like
