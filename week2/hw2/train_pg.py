@@ -28,17 +28,23 @@ def _unpad(padded, seq_lengths):
 class GRULinear(torch.nn.Module):
     def __init__(self, input_size, output_size, hidden_size, num_layers):
         super(GRULinear, self).__init__()
-        self.gru = torch.nn.GRU(input_size=input_size,
+        self.lin_in = torch.nn.Linear(in_features=input_size,
+                                      out_features=hidden_size,
+                                      bias=True)
+        self.relu = torch.nn.ReLU(inplace=True)
+        self.gru = torch.nn.GRU(input_size=hidden_size,
                                 hidden_size=hidden_size,
                                 num_layers=num_layers,
                                 bias=True,
                                 batch_first=True,
-                                dropout=0.5)
-        self.linear = torch.nn.Linear(in_features=32,
-                                      out_features=output_size,
-                                      bias=True)
+                                dropout=0.0)
+        self.lin_out = torch.nn.Linear(in_features=hidden_size,
+                                       out_features=output_size,
+                                       bias=True)
 
     def forward(self, inputs, hidden_prev=None):
+        inputs = self.lin_in(inputs)
+        inputs = self.relu(inputs)
         outputs, hidden_curr = self.gru(inputs, hidden_prev)
 
         if isinstance(inputs, rnn_utils.PackedSequence):
@@ -50,7 +56,7 @@ class GRULinear(torch.nn.Module):
             # sequences are thrown away.
             outputs = _unpad(unpacked, seq_lengths)
 
-        pred = self.linear(outputs)
+        pred = self.lin_out(outputs)
 
         return pred, hidden_curr
 
@@ -71,13 +77,16 @@ def _get_model(obs_dim, action_dim, model_name, num_layers, hidden_size):
                                torch.nn.ReLU(inplace=True)))
 
         layers = collections.OrderedDict(layers)
+        feedforward = torch.nn.Sequential(layers)
+    else:
+        feedforward = None
 
     models = {
-        'feedforward': torch.nn.Sequential(layers),
+        'feedforward': feedforward,
         'gru': GRULinear(
             input_size=obs_dim,
             output_size=action_dim,
-            hidden_size=32,
+            hidden_size=hidden_size,
             num_layers=num_layers),
     }
 
@@ -89,7 +98,8 @@ def _init_boxs_loop(obs_dim,
                     model_name,
                     is_discrete,
                     num_layers,
-                    hidden_size):
+                    hidden_size,
+                    learning_rate):
     """Initializes Box's loop:
     (model(data) -> inference -> criticism -> updated model(data))*.
     """
@@ -112,7 +122,8 @@ def _init_boxs_loop(obs_dim,
 
     optimizer = torch.optim.Adam([{'params': biases, 'weight_decay': 0},
                                   {'params': weights, 'weight_decay': 1e-4}],
-                                 lr=1e-2)
+                                 lr=learning_rate)
+    # optimizer = torch.optim.Adam(biases + weights, lr=learning_rate)
 
     return {'policy': policy,
             'policy_logstd': policy_logstd,
@@ -154,8 +165,8 @@ def train_PG(exp_name='',
              seed=0,
              # network arguments
              num_layers=1,
-             size=32
-             ):
+             size=32,
+             model_name='gru'):
 
     start = time.time()
 
@@ -247,10 +258,12 @@ def train_PG(exp_name='',
 
     boxs_loop = _init_boxs_loop(obs_dim,
                                 action_dim,
-                                'feedforward',
+                                model_name,
                                 is_discrete,
                                 num_layers,
-                                size)
+                                size,
+                                learning_rate)
+    boxs_loop['policy'].train()
 
     # ======================================================================= #
     #                           ----------SECTION 5----------
@@ -290,6 +303,7 @@ def train_PG(exp_name='',
                                     (itr % 10 == 0) and
                                     animate)
             steps = 0
+            hidden_curr = None
             while True:
                 if animate_this_episode:
                     env.render()
@@ -298,7 +312,13 @@ def train_PG(exp_name='',
 
                 ob = torch.autograd.Variable(
                     torch.from_numpy(ob.astype(np.float32))).cuda()
-                policy_logits = boxs_loop['policy'](ob)
+                ob = ob[np.newaxis, np.newaxis, :]
+                if model_name == 'feedforward':
+                    policy_logits = boxs_loop['policy'](ob)
+                else:
+                    policy_logits, hidden_curr = boxs_loop['policy'](
+                        ob, hidden_curr)
+                    policy_logits = policy_logits.squeeze()
 
                 # NOTE(brendan): Here, an action is sampled from the policy.
                 # For the discrete case, the policy is interpreted as log
@@ -495,14 +515,20 @@ def train_PG(exp_name='',
         loss = torch.autograd.Variable(torch.zeros(1),
                                        requires_grad=True).cuda()
         for i, path in enumerate(paths):
+            per_path_loss = 0.0
             for t, logprob in enumerate(path['logprobs']):
-                loss += logprob*adv_n[i][t]
+                per_path_loss += logprob*adv_n[i][t]
+            # TODO(brendan): Does this make sense, averaging reward per
+            # timestep?
+            loss += per_path_loss/len(path['logprobs'])
         loss = -loss
         loss /= len(paths)
         print(loss.cpu().data.numpy()[0])
 
         boxs_loop['optimizer'].zero_grad()
         loss.backward()
+        for name, param in boxs_loop['policy'].named_parameters():
+            print(name, param.size(), param.grad.mean().data.cpu().numpy())
         boxs_loop['optimizer'].step()
 
         # Log diagnostics
@@ -527,6 +553,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('env_name', type=str)
     parser.add_argument('--exp_name', type=str, default='vpg')
+    parser.add_argument('--model-name', type=str)
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--discount', type=float, default=1.0)
     parser.add_argument('--n_iter', '-n', type=int, default=100)
@@ -570,7 +597,8 @@ def main():
                 nn_baseline=args.nn_baseline,
                 seed=seed,
                 num_layers=args.num_layers,
-                size=args.size
+                size=args.size,
+                model_name=args.model_name
                 )
         # Awkward hacky process runs, because Tensorflow does not like
         # repeatedly calling train_PG in the same thread.
