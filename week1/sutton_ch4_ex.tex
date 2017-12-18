@@ -1,0 +1,117 @@
+\documentclass[a4paper, 12pt, titlepage]{article}
+
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+
+\algdef{SE}[DOWHILE]{Do}{doWhile}{\algorithmicdo}[1]{\algorithmicwhile\ #1}%
+
+% https://tex.stackexchange.com/questions/187162/vertical-bar-for-absolute-value-and-conditional-expectation
+\newcommand{\exppi}{\mathbb{E}_\pi\expectarg}
+\DeclarePairedDelimiterX{\expectarg}[1]{[}{]}{%
+  \ifnum\currentgrouptype=16 \else\begingroup\fi
+  \activatebar#1
+  \ifnum\currentgrouptype=16 \else\endgroup\fi
+}
+
+\newcommand{\innermid}{\nonscript\;\delimsize\vert\nonscript\;}
+\newcommand{\activatebar}{%
+  \begingroup\lccode`\~=`\|
+  \lowercase{\endgroup\let~}\innermid
+  \mathcode`|=\string"8000
+}
+
+\newcommand{\q}[2]{q_\pi(#1, #2)}
+\renewcommand{\v}[1]{v_\pi(#1)}
+
+\date{\today}
+\title{Chapter 4: Dynamic Programming}
+
+
+\author{Brendan Duke}
+
+
+\begin{document}
+
+
+\section{Exercise 4.1}
+
+The question regards the gridworld of Example~4.1 in the textbook, under an
+equiprobable random policy of moving
+$\{\textrm{up}, \textrm{down}, \textrm{left}, \textrm{right}\}$.
+
+\begin{align*}
+        \q{s}{a} &= \sum_{s', r} p(s', r | s, a) [r + \gamma \v{s'}]  \\
+        \implies \q{11}{\textrm{down}} &= 1 \cdot [-1 + \gamma \v{0.0}] = -1
+\end{align*}
+
+\begin{equation*}
+        \q{7}{\textrm{down}} = 1 \cdot [-1 + \gamma \v{11}] = -15
+\end{equation*}
+
+
+\section{Exercise 4.2}
+
+This question regards adding a 15th state to Example~4.1, and compares the
+value function for that state under the dynamics where state~15 cannot and then
+can be visited from state~13.
+
+
+\subsection{Case 1}
+
+\begin{align*}
+        \v{s} &= \sum_a \pi(a \mid s) \sum_{s', r} p(s', r \mid s, a) [r + \gamma \v{s'}] \\
+        \v{15} &= 0.25 \cdot [(-1 + \v{12}) + (-1 + \v{13}) + (-1 + \v{14}) + (-1 + \v{15})] \\
+        &\approx{} -20.0
+\end{align*}
+
+
+\subsection{Case 2}
+
+Achieved, by computation, $\v{15} = -20.0$. Why?
+
+
+\section{Exercise 4.3}
+
+The question asks for future action-value expressions~$\q{\cdot}{\cdot}$ in
+terms of future states.
+
+\begin{align*}
+        \q{s}{a} &= \exppi{R_{t + 1} + \gamma \q{S_{t + 1}}{A_{t + 1}} | S_t = s, A_t = a} \\
+                 &= \sum_{s', r} p(s', r \mid s, a) \left[r + \gamma \sum_{a'} \pi(a' \mid s') \q{s'}{a'}\right]
+\end{align*}
+
+\begin{equation*}
+        q_{k + 1}(s, a) = \sum_{s', r} p(s', r \mid s, a) \left[r + \gamma \sum_{a'} \pi(a' \mid s') q_k(s', a')\right]
+\end{equation*}
+
+
+\section{Exercise 4.4}
+
+In order to avoid the infinite switching between equal policies, the policy
+should still be considered stable if a different policy with the same value has
+been selected.
+
+
+\section{Exercise 4.5}
+
+This is solved in \verb|jack_policy_iter.c|.
+
+
+\section{Exercise 4.6}
+
+Policy iteration in terms of the action-value function $q_*$.
+
+\begin{algorithmic}[1]
+        \Do{}
+                \State{$\Delta \gets 0$}
+                \ForAll{$s \in S, a \in A$}
+                        \State{$q \gets Q(s, a)$}
+                        \State{$Q(s, a) \gets \sum_{s', r} p(s', r \mid s, a)[r + \gamma \sum_{a'}\pi(a' \mid s') Q(s', a')]$}
+                \EndFor{}
+        \doWhile{$\Delta < \theta$}
+\end{algorithmic}
+
+\end{document}
